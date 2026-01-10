@@ -1,0 +1,33 @@
+queries_col.delete_many({})
+
+documents = []
+skipped = 0
+
+for i in range(len(df)):
+    token_val = df.at[i, "filtered_tokens_str"]
+
+    # 🔥 ABSOLUTE SAFETY CHECK
+    if pd.isna(token_val):
+        skipped += 1
+        continue
+
+    token_str = str(token_val).strip()
+
+    if token_str == "":
+        skipped += 1
+        continue
+
+    documents.append({
+        "filtered_tokens": token_str.split(),   # GUARANTEED STRING
+        "rule_features": {
+            f: int(df.at[i, f]) for f in RULE_FEATURES
+        },
+        "true_label": int(df.at[i, LABEL_COL]),
+        "predicted_label": None,
+        "prediction_score": None
+    })
+
+queries_col.insert_many(documents)
+
+print(f"✅ Inserted {len(documents)} documents into MongoDB")
+print(f"⚠️ Skipped {skipped} rows with empty / invalid tokens")
