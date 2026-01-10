@@ -18,3 +18,12 @@ Results:
 Confusion Matrix:
 
 ![Confusion Matrix](Confusion_Matrix(Test).png)
+
+Performance Comparison:
+
+![Performance Comparison Chart](Performance.png)
+
+ROC Curves:
+
+![ROC Curves](ROC%20Curves%20(Test).png)
+
