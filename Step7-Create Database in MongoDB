@@ -13,7 +13,7 @@ import tensorflow as tf
 from tensorflow.keras import layers, Model
 import pickle
 
-MONGO_URI = "mongodb+srv://gooxi04_db_user:M7H59cyww8ok5vrO@cluster0.vz0xpav.mongodb.net/?retryWrites=true&w=majority"
+MONGO_URI = "mongodb+srv://gooxi04_db_user:<password>@cluster0.vz0xpav.mongodb.net/?retryWrites=true&w=majority"
 
 client = MongoClient(MONGO_URI)
 db = client["sqli_detection_db"]
