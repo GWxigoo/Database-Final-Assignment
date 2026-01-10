@@ -11,6 +11,6 @@ https://imailsunwayedu-my.sharepoint.com/:x:/g/personal/22034987_imail_sunway_ed
 The codes uploaded should be accessed according to the "Step" label to ensure the code run smoothly. Due to privacy concerned, the password connected to MongoDB was hidden. 
 
 Research Flowchart:
-![Research Flowchart](Database Research Flowchart.png)
+![Research Flowchart](Database%20Research%20Flowchart.png)
 
 
