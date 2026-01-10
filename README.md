@@ -7,3 +7,5 @@ Download link: https://ieee-dataport.org/documents/sql-injection-detection-datas
 
 For the Python Preprocessed dataset, gue to GitHub file size limits, the dataset is hosted externally. It can be accessed at below link:
 https://imailsunwayedu-my.sharepoint.com/:x:/g/personal/22034987_imail_sunway_edu_my/IQAH_FifLQgGRKwZYn8mvaoPAf6df_AG9bZ9SW_ipC0Pg1E?e=Lbh39t
+
+The codes uploaded should be accessed according to the "Step" label to ensure the code run smoothly.
