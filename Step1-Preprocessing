@@ -1,0 +1,203 @@
+import re
+import pandas as pd
+from urllib.parse import unquote_plus
+
+# =========================================================
+# CONFIG
+# =========================================================
+INPUT_PATH = "/content/SQL_Injection_Detection_Dataset.csv"
+OUTPUT_FILE = "final_sqli_feature_engineered.xlsx"
+
+# =========================================================
+# 1) LOAD DATASET (ROBUST)
+# =========================================================
+def load_csv_robust(path: str) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path)
+    except Exception:
+        return pd.read_csv(
+            path,
+            engine="python",
+            on_bad_lines="skip",
+            dtype=str,
+            keep_default_na=False
+        )
+
+df = load_csv_robust(INPUT_PATH)
+df = df.rename(columns=lambda c: c.strip())
+
+# Ensure Query column exists
+if "Query" not in df.columns:
+    lower_map = {c.lower().strip(): c for c in df.columns}
+    if "query" in lower_map:
+        df["Query"] = df[lower_map["query"]]
+    else:
+        raise ValueError(f"Cannot find 'Query' column. Columns: {list(df.columns)}")
+
+df["Query"] = df["Query"].astype(str)
+
+# =========================================================
+# 2) BASIC LENGTH FEATURE
+# =========================================================
+df["query_len"] = df["Query"].str.len()
+
+# =========================================================
+# 3) FEATURE EXTRACTION (RAW QUERY)
+# =========================================================
+def has(pattern, text):
+    return int(bool(re.search(pattern, text, re.IGNORECASE | re.DOTALL)))
+
+# Boolean-based injection
+df["is_boolean"] = df["Query"].apply(
+    lambda q: has(r"\b(and|or)\b|&&|\|\|", q)
+)
+
+# Always-true conditions
+df["always_true"] = df["Query"].apply(
+    lambda q: has(
+        r"\b\d+\s*=\s*\d+\b|"
+        r"\b\d+\s*<\s*\d+\b|"
+        r"\b\d+\s*>\s*\d+\b|"
+        r"('([^']+)'\s*=\s*'\2')|"
+        r"(\"([^\"]+)\"\s*=\s*\"\4\")",
+        q
+    )
+)
+
+# UNION-based injection
+df["is_union"] = df["Query"].apply(
+    lambda q: has(r"\bunion\b[\s\/\*]*\b(all\s+)?select\b", q)
+)
+
+# Comment truncation
+df["is_comment"] = df["Query"].apply(
+    lambda q: has(r"--|--\+|#|/\*", q)
+)
+
+# Time-based injection
+df["is_time_based"] = df["Query"].apply(
+    lambda q: has(
+        r"sleep\s*\(|pg_sleep\s*\(|benchmark\s*\(|"
+        r"waitfor\s+delay|dbms_lock\.sleep",
+        q
+    )
+)
+
+# Comparison operators
+COMPARE_OP_RE = re.compile(r"<=|>=|<>|!=|=|<|>")
+df["comparison_op_count"] = df["Query"].apply(
+    lambda q: len(COMPARE_OP_RE.findall(q))
+)
+
+# Parentheses depth
+def parentheses_depth(q: str) -> int:
+    depth = max_depth = 0
+    for c in q:
+        if c == "(":
+            depth += 1
+            max_depth = max(max_depth, depth)
+        elif c == ")":
+            depth = max(0, depth - 1)
+    return max_depth
+
+df["parentheses_depth"] = df["Query"].apply(parentheses_depth)
+
+# Logical operator count
+df["logic_operator_count"] = df["Query"].apply(
+    lambda q: len(re.findall(r"\b(and|or)\b|&&|\|\|", q, re.IGNORECASE))
+)
+
+# =========================================================
+# 4) REMOVE ALL-ZERO FEATURE ROWS
+# =========================================================
+feature_cols = [
+    "is_boolean", "always_true", "is_union", "is_comment",
+    "is_time_based", "comparison_op_count",
+    "parentheses_depth", "logic_operator_count"
+]
+
+df = df[df[feature_cols].sum(axis=1) > 0].copy()
+print("Remaining rows after all-zero filter:", len(df))
+
+# =========================================================
+# 5) NORMALIZATION
+# =========================================================
+def predecode(q: str) -> str:
+    q = str(q).replace("\x00", " ")
+    for _ in range(2):
+        new_q = unquote_plus(q)
+        if new_q == q:
+            break
+        q = new_q
+    return q
+
+def normalize_sql(q: str) -> str:
+    q = predecode(q).lower().strip()
+    q = re.sub(r"\s+", " ", q)
+
+    q = re.sub(r"/\*.*?\*/", " /* */ ", q, flags=re.DOTALL)
+    q = re.sub(r"--[^\r\n]*", " -- ", q)
+    q = re.sub(r"#[^\r\n]*", " # ", q)
+
+    q = re.sub(r"\[[^\]]+\]", "<id>", q)
+    q = re.sub(r"`[^`]+`", "<id>", q)
+    q = re.sub(r"'[^']*'", "<str>", q)
+    q = re.sub(r'"[^"]*"', "<str>", q)
+    q = re.sub(r"\b\d+(\.\d+)?\b", "<num>", q)
+
+    q = re.sub(r"\s*==\s*", " = ", q)
+    q = re.sub(r"\s*\)\s*=\s*\(\s*", " = ", q)
+
+    return q
+
+df["normalized_query"] = df["Query"].apply(normalize_sql)
+
+# =========================================================
+# 6) TOKENIZATION (STRING-SAFE, NO LIST EXPORT)
+# =========================================================
+TOKEN_PATTERN = re.compile(r"<str>|<num>|<id>|\b[a-z_]+\b")
+
+SQL_VOCAB = {
+    "select","union","from","where","and","or",
+    "insert","update","delete","drop",
+    "sleep","pg_sleep","benchmark","waitfor","delay",
+    "information_schema","pg_catalog","sqlite_master",
+    "sysobjects","sysdatabases",
+    "<num>","<str>","<id>"
+}
+
+def tokenize_and_filter(q: str):
+    tokens = TOKEN_PATTERN.findall(q)
+    return [t for t in tokens if t in SQL_VOCAB]
+
+# 🔥 SAFE REPRESENTATION FOR EXPORT
+df["filtered_tokens_str"] = df["normalized_query"] \
+    .apply(tokenize_and_filter) \
+    .apply(lambda x: " ".join(x))
+
+# =========================================================
+# 7) STR / NUM COUNTS
+# =========================================================
+df["str_count"] = df["normalized_query"].str.count("<str>")
+df["num_count"] = df["normalized_query"].str.count("<num>")
+
+# =========================================================
+# 8) EXCEL-SAFE SANITIZATION (CRITICAL)
+# =========================================================
+ILLEGAL_EXCEL_CHARS = re.compile(r"[\x00-\x08\x0B-\x0C\x0E-\x1F]")
+
+def remove_illegal_excel_chars(x):
+    if isinstance(x, str):
+        return ILLEGAL_EXCEL_CHARS.sub("", x)
+    return x
+
+for col in df.columns:
+    if df[col].dtype == object:
+        df[col] = df[col].apply(remove_illegal_excel_chars)
+
+# =========================================================
+# 9) EXPORT
+# =========================================================
+df.to_excel(OUTPUT_FILE, index=False)
+print(f"Final Excel exported safely: {OUTPUT_FILE}")
+print("Final row count:", len(df))
