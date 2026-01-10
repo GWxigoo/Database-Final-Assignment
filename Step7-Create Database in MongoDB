@@ -22,3 +22,16 @@ queries_col = db["sql_queries"]
 results_col = db["sql_prediction_results"]
 
 print("✅ MongoDB connected")
+
+docs = list(queries_col.find({}, {"_id": 0}))
+df = pd.DataFrame(docs)
+
+RULE_FEATURES = [
+    "query_len","is_boolean","always_true","is_union","is_comment",
+    "is_time_based","comparison_op_count","parentheses_depth",
+    "logic_operator_count","str_count","num_count"
+]
+
+df["text"] = df["filtered_tokens"].apply(lambda x: " ".join(x))
+X_feat = pd.DataFrame(df["rule_features"].tolist())[RULE_FEATURES].values
+y = df["true_label"].values
