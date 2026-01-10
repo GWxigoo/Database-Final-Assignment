@@ -1,0 +1,28 @@
+INPUT_PATH = "/content/final_sqli_feature_engineered.xlsx"
+
+RULE_FEATURES = [
+    "query_len","is_boolean","always_true","is_union","is_comment",
+    "is_time_based","comparison_op_count","parentheses_depth",
+    "logic_operator_count","str_count","num_count"
+]
+
+df = pd.read_excel(INPUT_PATH)
+
+# =========================
+# CLEAN LABEL COLUMN
+# =========================
+
+LABEL_COL = "Label"
+TEXT_COL = "filtered_tokens_str"
+
+# Force numeric labels
+df[LABEL_COL] = pd.to_numeric(df[LABEL_COL], errors="coerce")
+
+# Drop rows without labels
+before = len(df)
+df = df.dropna(subset=[LABEL_COL]).reset_index(drop=True)
+after = len(df)
+
+print(f"🧹 Dropped {before - after} rows with missing labels")
+print("Shape after label cleaning:", df.shape)
+
