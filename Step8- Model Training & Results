@@ -1,0 +1,178 @@
+
+# =========================
+# REQUIRED IMPORTS
+# =========================
+import time
+import pickle
+import pandas as pd
+
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+
+from xgboost import XGBClassifier
+
+import tensorflow as tf
+from tensorflow.keras import layers, Model
+
+
+X_text_tr, X_text_te, X_feat_tr, X_feat_te, y_tr, y_te = train_test_split(
+    df["text"].values,
+    X_feat,
+    y,
+    test_size=0.3,
+    random_state=42,
+    stratify=y
+)
+
+# ===== Logistic Regression =====
+start_train = time.time()
+
+tfidf = TfidfVectorizer(max_features=15000)
+Xtr_lr = tfidf.fit_transform(X_text_tr)
+Xte_lr = tfidf.transform(X_text_te)
+
+lr = LogisticRegression(max_iter=1000)
+lr.fit(Xtr_lr, y_tr)
+
+train_time_lr = time.time() - start_train
+
+start_test = time.time()
+lr_scores = lr.predict_proba(Xte_lr)[:, 1]
+lr_preds = (lr_scores >= 0.5).astype(int)
+test_time_lr = time.time() - start_test
+
+
+# ===== XGBoost =====
+start_train = time.time()
+
+xgb = XGBClassifier(
+    n_estimators=150,
+    max_depth=5,
+    learning_rate=0.1,
+    eval_metric="logloss"
+)
+
+xgb.fit(Xtr_lr, y_tr)
+
+train_time_xgb = time.time() - start_train
+
+start_test = time.time()
+xgb_scores = xgb.predict_proba(Xte_lr)[:, 1]
+xgb_preds = (xgb_scores >= 0.5).astype(int)
+test_time_xgb = time.time() - start_test
+
+
+# ===== CNN–LSTM =====
+mu, sd = X_feat_tr.mean(0), X_feat_tr.std(0) + 1e-6
+X_feat_tr_n = (X_feat_tr - mu) / sd
+X_feat_te_n = (X_feat_te - mu) / sd
+
+vec = layers.TextVectorization(
+    max_tokens=8000,
+    output_mode="int",
+    output_sequence_length=30
+)
+vec.adapt(X_text_tr)
+
+def build_hybrid_model(vocab_size, num_features):
+    text_input = layers.Input(shape=(30,))
+    x = layers.Embedding(vocab_size, 32)(text_input)
+    x = layers.Conv1D(32, 3, activation="relu", padding="same")(x)
+    x = layers.MaxPooling1D(2)(x)
+    x = layers.LSTM(16)(x)
+
+    feat_input = layers.Input(shape=(num_features,))
+    f = layers.Dense(16, activation="relu")(feat_input)
+
+    z = layers.Concatenate()([x, f])
+    z = layers.Dense(32, activation="relu")(z)
+    out = layers.Dense(1, activation="sigmoid")(z)
+
+    model = Model([text_input, feat_input], out)
+    model.compile(
+        optimizer="adam",
+        loss="binary_crossentropy",
+        metrics=["accuracy"]
+    )
+    return model
+
+cnn_lstm = build_hybrid_model(vec.vocabulary_size(), X_feat_tr.shape[1])
+
+start_train = time.time()
+cnn_lstm.fit(
+    [vec(X_text_tr), X_feat_tr_n],
+    y_tr,
+    epochs=5,
+    batch_size=256,
+    verbose=1
+)
+train_time_cnn = time.time() - start_train
+
+start_test = time.time()
+cnn_scores = cnn_lstm.predict(
+    [vec(X_text_te), X_feat_te_n]
+).ravel()
+cnn_preds = (cnn_scores >= 0.5).astype(int)
+test_time_cnn = time.time() - start_test
+
+
+
+#Evaluation Function
+
+def evaluate(y_true, preds):
+    return {
+        "Accuracy": accuracy_score(y_true, preds),
+        "Precision": precision_score(y_true, preds),
+        "Recall": recall_score(y_true, preds),
+        "F1": f1_score(y_true, preds)
+    }
+
+results = {
+    "Logistic Regression": {
+        **evaluate(y_te, lr_preds),
+        "Train Time (s)": train_time_lr,
+        "Test Time (s)": test_time_lr,
+        "Total Time (s)": train_time_lr + test_time_lr
+    },
+    "XGBoost": {
+        **evaluate(y_te, xgb_preds),
+        "Train Time (s)": train_time_xgb,
+        "Test Time (s)": test_time_xgb,
+        "Total Time (s)": train_time_xgb + test_time_xgb
+    },
+    "CNN–LSTM": {
+        **evaluate(y_te, cnn_preds),
+        "Train Time (s)": train_time_cnn,
+        "Test Time (s)": test_time_cnn,
+        "Total Time (s)": train_time_cnn + test_time_cnn
+    }
+}
+
+results_df = pd.DataFrame(results).T
+print(results_df)
+
+
+best_model_name = results_df["F1"].idxmax()
+print(" Best model:", best_model_name)
+
+if best_model_name == "CNN–LSTM":
+    cnn_lstm.save("best_model.keras")
+    pickle.dump(vec, open("best_text_vectorizer.pkl", "wb"))
+    best_scores = cnn_scores
+    best_preds = cnn_preds
+
+elif best_model_name == "XGBoost":
+    pickle.dump(xgb, open("best_model.pkl", "wb"))
+    pickle.dump(tfidf, open("best_text_vectorizer.pkl", "wb"))
+    best_scores = xgb_scores
+    best_preds = xgb_preds
+
+else:
+    pickle.dump(lr, open("best_model.pkl", "wb"))
+    pickle.dump(tfidf, open("best_text_vectorizer.pkl", "wb"))
+    best_scores = lr_scores
+    best_preds = lr_preds
+
+
