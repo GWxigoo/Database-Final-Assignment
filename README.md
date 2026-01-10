@@ -13,4 +13,8 @@ The codes uploaded should be accessed according to the "Step" label to ensure th
 Research Flowchart:
 ![Research Flowchart](Database%20Research%20Flowchart.png)
 
+Results:
 
+Confusion Matrix:
+
+![Confusion Matrix](Confusion_Matrix(Test).png)
