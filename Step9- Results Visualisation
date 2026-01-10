@@ -1,0 +1,102 @@
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.metrics import (
+    confusion_matrix,
+    roc_curve,
+    roc_auc_score
+)
+models_preds = {
+    "Logistic Regression": lr_preds,
+    "XGBoost": xgb_preds,
+    "CNN–LSTM": cnn_preds
+}
+
+plt.figure(figsize=(12, 4))
+
+for i, (name, preds) in enumerate(models_preds.items(), 1):
+    cm = confusion_matrix(y_te, preds)
+
+    plt.subplot(1, 3, i)
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        cbar=False
+    )
+    plt.title(f"{name}")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+
+plt.suptitle("Confusion Matrices (Test Set)", fontsize=14)
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(7, 6))
+
+model_scores = {
+    "Logistic Regression": lr_scores,
+    "XGBoost": xgb_scores,
+    "CNN–LSTM": cnn_scores
+}
+
+for name, scores in model_scores.items():
+    fpr, tpr, _ = roc_curve(y_te, scores)
+    auc = roc_auc_score(y_te, scores)
+    plt.plot(fpr, tpr, label=f"{name} (AUC = {auc:.4f})")
+
+plt.plot([0, 1], [0, 1], "--", color="gray")
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.title("ROC Curves (Test Set)")
+plt.legend(loc="lower right")
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+
+#create a performance data frame
+performance_df = pd.DataFrame({
+    "Accuracy": [
+        accuracy_score(y_te, lr_preds),
+        accuracy_score(y_te, xgb_preds),
+        accuracy_score(y_te, cnn_preds)
+    ],
+    "Precision": [
+        precision_score(y_te, lr_preds),
+        precision_score(y_te, xgb_preds),
+        precision_score(y_te, cnn_preds)
+    ],
+    "Recall": [
+        recall_score(y_te, lr_preds),
+        recall_score(y_te, xgb_preds),
+        recall_score(y_te, cnn_preds)
+    ],
+    "F1-score": [
+        f1_score(y_te, lr_preds),
+        f1_score(y_te, xgb_preds),
+        f1_score(y_te, cnn_preds)
+    ]
+}, index=["Logistic Regression", "XGBoost", "CNN–LSTM"])
+
+ax = performance_df.plot(
+    kind="bar",
+    figsize=(8, 5)
+)
+
+ax.set_ylim(0, 1)
+ax.set_title("Performance Comparison of Models")
+ax.set_ylabel("Score")
+ax.set_xlabel("Model")
+ax.set_xticklabels(performance_df.index, rotation=0)
+
+ax.legend(
+    loc="upper left",
+    bbox_to_anchor=(1.02, 1),
+    borderaxespad=0
+)
+
+plt.tight_layout()
+plt.show()
+
