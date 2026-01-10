@@ -1,0 +1,13 @@
+results_col.delete_many({})
+
+output_df = pd.DataFrame({
+    "text": X_text_te,
+    "true_label": y_te,
+    "predicted_label": best_preds,
+    "prediction_score": best_scores,
+    "model_used": best_model_name
+})
+
+results_col.insert_many(output_df.to_dict("records"))
+
+print("✅ Best model execution results saved to MongoDB")
